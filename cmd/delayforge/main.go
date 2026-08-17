@@ -7,10 +7,18 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+	"syscall"
 
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
 )
+
+func init() {
+	// Must be called before ANY Windows API calls
+	user32 := syscall.NewLazyDLL("user32.dll")
+	proc := user32.NewProc("SetProcessDPIAware")
+	proc.Call()
+}
 
 var (
 	engine  *DamageEngine
@@ -155,13 +163,13 @@ func main() {
 				return
 			}
 			mw.Synchronize(func() {
-				lblP.SetText(strconv.FormatInt(engine.stats.Processed.Load(), 1))
+				lblP.SetText(strconv.FormatInt(engine.stats.Processed.Load(), 10))
 				lblB.SetText(fmtBytes(engine.stats.Bytes.Load()))
-				lblD.SetText(strconv.FormatInt(engine.stats.Delayed.Load(), 1))
-				lblDr.SetText(strconv.FormatInt(engine.stats.Dropped.Load(), 1))
-				lblDu.SetText(strconv.FormatInt(engine.stats.Duplicated.Load(), 1))
-				lblR.SetText(strconv.FormatInt(engine.stats.Reordered.Load(), 1))
-				lblT.SetText(strconv.FormatInt(engine.stats.Tampered.Load(), 1))
+				lblD.SetText(strconv.FormatInt(engine.stats.Delayed.Load(), 10))
+				lblDr.SetText(strconv.FormatInt(engine.stats.Dropped.Load(), 10))
+				lblDu.SetText(strconv.FormatInt(engine.stats.Duplicated.Load(), 10))
+				lblR.SetText(strconv.FormatInt(engine.stats.Reordered.Load(), 10))
+				lblT.SetText(strconv.FormatInt(engine.stats.Tampered.Load(), 10))
 			})
 			if engine.running {
 				engine.UpdateConfig(buildCfg(cmbDir, cmbProto, leIP, lePort, slLat, slJit, slLoss, slDup, slReorder, slTamper, slThrottle))
@@ -214,7 +222,7 @@ func fileExists(p string) bool { _, e := os.Stat(p); return e == nil }
 
 func fmtBytes(b int64) string {
 	if b < 1024 {
-		return strconv.FormatInt(b, 1) + " B"
+		return strconv.FormatInt(b, 10) + " B"
 	}
 	if b < 1048576 {
 		return fmt.Sprintf("%.1f KB", float64(b)/1024)
