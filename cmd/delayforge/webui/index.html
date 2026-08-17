@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DelayForge — Network Impairment Tool</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh}
+.container{max-width:960px;margin:0 auto;padding:20px}
+header{display:flex;align-items:center;justify-content:space-between;padding:16px 0;border-bottom:1px solid #1e293b;margin-bottom:24px}
+.logo{display:flex;align-items:center;gap:12px}
+.logo-icon{width:40px;height:40px;background:#2563eb;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px}
+h1{font-size:22px;font-weight:700}
+.subtitle{font-size:12px;color:#64748b}
+.btn{padding:10px 28px;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;transition:all .15s}
+.btn-start{background:#16a34a;color:#fff}
+.btn-start:hover{background:#15803d}
+.btn-stop{background:#dc2626;color:#fff}
+.btn-stop:hover{background:#b91c1c}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:700px){.grid{grid-template-columns:1fr}}
+.card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:16px}
+.card-title{font-size:13px;font-weight:600;color:#94a3b8;margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px}
+.control{margin-bottom:14px}
+.control:last-child{margin-bottom:0}
+.control-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.control-label{font-size:13px;color:#cbd5e1}
+.control-value{font-size:14px;font-weight:700;color:#60a5fa;min-width:60px;text-align:right}
+input[type=range]{width:100%;height:6px;-webkit-appearance:none;background:#334155;border-radius:3px;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;background:#3b82f6;border-radius:50%;cursor:pointer}
+select,input[type=text]{width:100%;padding:8px 10px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;font-size:13px}
+select:focus,input[type=text]:focus{outline:none;border-color:#3b82f6}
+.stat-row{display:flex;justify-content:space-between;padding:5px 0;font-size:13px}
+.stat-label{color:#94a3b8}
+.stat-val{font-weight:600;font-variant-numeric:tabular-nums}
+.stat-delayed .stat-val{color:#3b82f6}
+.stat-dropped .stat-val{color:#ef4444}
+.stat-duplicated .stat-val{color:#f59e0b}
+.stat-reordered .stat-val{color:#a855f7}
+.stat-tampered .stat-val{color:#06b6d4}
+.filter-preview{background:#0f172a;border:1px solid #334155;border-radius:6px;padding:8px 10px;font-family:'Cascadia Code','Fira Code',monospace;font-size:12px;color:#60a5fa;word-break:break-all;margin-top:8px}
+.status-badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600}
+.status-running{background:#166534;color:#4ade80}
+.status-stopped{background:#7f1d1d;color:#fca5a5}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="logo">
+      <div class="logo-icon">⚒</div>
+      <div>
+        <h1>DelayForge</h1>
+        <div class="subtitle">Network Impairment Tool</div>
+      </div>
+    </div>
+    <div>
+      <span id="statusBadge" class="status-badge status-stopped">STOPPED</span>
+      <button id="btnToggle" class="btn btn-start" onclick="toggleEngine()">▶ Start</button>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- Left: Controls -->
+    <div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title">⏱ Latency</div>
+        <div class="control">
+          <div class="control-header">
+            <span class="control-label">Base Delay</span>
+            <span class="control-value" id="latencyVal">0 ms</span>
+          </div>
+          <input type="range" id="latency" min="0" max="3000" value="0" oninput="syncVal(this,'latencyVal',' ms')">
+        </div>
+        <div class="control">
+          <div class="control-header">
+            <span class="control-label">Jitter (±)</span>
+            <span class="control-value" id="jitterVal">0 ms</span>
+          </div>
+          <input type="range" id="jitter" min="0" max="500" value="0" oninput="syncVal(this,'jitterVal',' ms')">
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title">✕ Packet Loss</div>
+        <div class="control">
+          <div class="control-header">
+            <span class="control-label">Drop Rate</span>
+            <span class="control-value" id="lossVal">0 %</span>
+          </div>
+          <input type="range" id="loss" min="0" max="100" value="0" oninput="syncVal(this,'lossVal',' %')">
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title">⧉ Duplicate</div>
+        <div class="control">
+          <div class="control-header">
+            <span class="control-label">Duplicate Rate</span>
+            <span class="control-value" id="dupVal">0 %</span>
+          </div>
+          <input type="range" id="dup" min="0" max="50" value="0" oninput="syncVal(this,'dupVal',' %')">
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title">⇅ Reorder</div>
+        <div class="control">
+          <div class="control-header">
+            <span class="control-label">Reorder Rate</span>
+            <span class="control-value" id="reorderVal">0 %</span>
+          </div>
+          <input type="range" id="reorder" min="0" max="50" value="0" oninput="syncVal(this,'reorderVal',' %')">
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title">⚡ Tamper (Corrupt)</div>
+        <div class="control">
+          <div class="control-header">
+            <span class="control-label">Corrupt Rate</span>
+            <span class="control-value" id="tamperVal">0 %</span>
+          </div>
+          <input type="range" id="tamper" min="0" max="50" value="0" oninput="syncVal(this,'tamperVal',' %')">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🔒 Bandwidth Throttle</div>
+        <div class="control">
+          <div class="control-header">
+            <span class="control-label">Max Bandwidth</span>
+            <span class="control-value" id="throttleVal">0 kbps</span>
+          </div>
+          <input type="range" id="throttle" min="0" max="10000" value="0" step="10" oninput="syncVal(this,'throttleVal',' kbps')">
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Filters + Stats -->
+    <div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title">🔍 Filter Rules</div>
+        <div class="control">
+          <div class="control-label" style="margin-bottom:4px">Direction</div>
+          <select id="direction">
+            <option value="both">Both (Inbound + Outbound)</option>
+            <option value="outbound">Outbound Only</option>
+            <option value="inbound">Inbound Only</option>
+          </select>
+        </div>
+        <div class="control">
+          <div class="control-label" style="margin-bottom:4px">Protocol</div>
+          <select id="protocol">
+            <option value="any">All</option>
+            <option value="tcp">TCP Only</option>
+            <option value="udp">UDP Only</option>
+            <option value="icmp">ICMP Only</option>
+          </select>
+        </div>
+        <div class="control">
+          <div class="control-label" style="margin-bottom:4px">IP / CIDR (comma-separated)</div>
+          <input type="text" id="ipFilter" placeholder="e.g. 192.168.1.0/24, 10.0.0.1">
+        </div>
+        <div class="control">
+          <div class="control-label" style="margin-bottom:4px">Ports (comma-separated)</div>
+          <input type="text" id="portFilter" placeholder="e.g. 80, 443">
+        </div>
+        <div class="filter-preview" id="filterPreview">true</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">📊 Live Statistics</div>
+        <div class="stat-row"><span class="stat-label">Packets Processed</span><span class="stat-val" id="sProcessed">0</span></div>
+        <div class="stat-row"><span class="stat-label">Bytes Processed</span><span class="stat-val" id="sBytes">0 B</span></div>
+        <div class="stat-row stat-delayed"><span class="stat-label">Delayed</span><span class="stat-val" id="sDelayed">0</span></div>
+        <div class="stat-row stat-dropped"><span class="stat-label">Dropped</span><span class="stat-val" id="sDropped">0</span></div>
+        <div class="stat-row stat-duplicated"><span class="stat-label">Duplicated</span><span class="stat-val" id="sDuplicated">0</span></div>
+        <div class="stat-row stat-reordered"><span class="stat-label">Reordered</span><span class="stat-val" id="sReordered">0</span></div>
+        <div class="stat-row stat-tampered"><span class="stat-label">Tampered</span><span class="stat-val" id="sTampered">0</span></div>
+        <div class="stat-row"><span class="stat-label">Queue Depth</span><span class="stat-val" id="sQueue">0</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let running = false;
+let statsTimer = null;
+
+function syncVal(el, labelId, suffix) {
+  document.getElementById(labelId).textContent = el.value + suffix;
+  updateFilterPreview();
+}
+
+function getConfig() {
+  return {
+    latencyMs: +document.getElementById('latency').value,
+    jitterMs: +document.getElementById('jitter').value,
+    packetLossPct: +document.getElementById('loss').value,
+    duplicatePct: +document.getElementById('dup').value,
+    reorderPct: +document.getElementById('reorder').value,
+    tamperPct: +document.getElementById('tamper').value,
+    throttleKbps: +document.getElementById('throttle').value,
+    direction: document.getElementById('direction').value,
+    protocol: document.getElementById('protocol').value,
+    portFilter: document.getElementById('portFilter').value,
+    ipFilter: document.getElementById('ipFilter').value
+  };
+}
+
+async function toggleEngine() {
+  const btn = document.getElementById('btnToggle');
+  const badge = document.getElementById('statusBadge');
+  if (running) {
+    await fetch('/api/stop', {method:'POST'});
+    running = false;
+    btn.textContent = '▶ Start';
+    btn.className = 'btn btn-start';
+    badge.textContent = 'STOPPED';
+    badge.className = 'status-badge status-stopped';
+    clearInterval(statsTimer);
+  } else {
+    const res = await fetch('/api/start', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(getConfig())
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      alert('Start failed:\n\n' + err);
+      return;
+    }
+    running = true;
+    btn.textContent = '⏹ Stop';
+    btn.className = 'btn btn-stop';
+    badge.textContent = 'RUNNING';
+    badge.className = 'status-badge status-running';
+    statsTimer = setInterval(pollStats, 500);
+    // Start config sync
+    setInterval(syncConfig, 1000);
+  }
+}
+
+async function syncConfig() {
+  if (!running) return;
+  await fetch('/api/config', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(getConfig())
+  });
+}
+
+async function pollStats() {
+  try {
+    const res = await fetch('/api/stats');
+    const s = await res.json();
+    document.getElementById('sProcessed').textContent = s.processed.toLocaleString();
+    document.getElementById('sBytes').textContent = fmtBytes(s.bytes);
+    document.getElementById('sDelayed').textContent = s.delayed.toLocaleString();
+    document.getElementById('sDropped').textContent = s.dropped.toLocaleString();
+    document.getElementById('sDuplicated').textContent = s.duplicated.toLocaleString();
+    document.getElementById('sReordered').textContent = s.reordered.toLocaleString();
+    document.getElementById('sTampered').textContent = s.tampered.toLocaleString();
+    document.getElementById('sQueue').textContent = `D:${s.delayQueue} R:${s.reorderQueue} T:${s.throttleQueue}`;
+    if (!s.running && running) {
+      running = false;
+      document.getElementById('btnToggle').textContent = '▶ Start';
+      document.getElementById('btnToggle').className = 'btn btn-start';
+      document.getElementById('statusBadge').textContent = 'STOPPED';
+      document.getElementById('statusBadge').className = 'status-badge status-stopped';
+    }
+  } catch {}
+}
+
+async function updateFilterPreview() {
+  try {
+    const res = await fetch('/api/filter', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(getConfig())
+    });
+    const d = await res.json();
+    document.getElementById('filterPreview').textContent = d.filter;
+  } catch {}
+}
+
+function fmtBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  if (b < 1073741824) return (b/1048576).toFixed(1) + ' MB';
+  return (b/1073741824).toFixed(2) + ' GB';
+}
+
+// Init filter preview
+updateFilterPreview();
+</script>
+</body>
+</html>

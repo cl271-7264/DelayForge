@@ -1,14 +1,14 @@
 # ⚒ DelayForge
 
-**Advanced Network Impairment Tool for Windows**
+**Advanced Network Impairment Tool for Windows — Zero Dependencies**
 
-DelayForge is an open-source tool that simulates degraded network conditions on Windows — adding latency, jitter, packet loss, duplication, reordering, corruption, and bandwidth throttling to your network traffic. Built for developers, QA engineers, and network researchers who need to test how their applications perform under real-world network stress.
+DelayForge is a lightweight, single-binary tool that simulates degraded network conditions on Windows — adding latency, jitter, packet loss, duplication, reordering, corruption, and bandwidth throttling to your network traffic.
 
-> **Inspired by [Clumsy](https://github.com/jagt/clumsy)** — reimagined with a modern WPF UI, single-file deployment, and extended capabilities.
+> **Inspired by [Clumsy](https://github.com/jagt/clumsy)** — reimagined with a web-based UI, Go performance, and extended capabilities.
 
 ![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)
-![Platform: Windows 10/11](https://img.shields.io/badge/Platform-Windows%2010%2F11-lightgrey.svg)
-![.NET 9](https://img.shields.io/badge/.NET-9-purple.svg)
+![Platform: Windows](https://img.shields.io/badge/Platform-Windows-lightgrey.svg)
+![Size: ~6MB](https://img.shields.io/badge/Size-~6MB-brightgreen.svg)
 
 ## Features
 
@@ -30,9 +30,8 @@ All effects can be **combined simultaneously** and adjusted in real-time.
 
 - **Direction**: Both / Outbound only / Inbound only
 - **Protocol**: All / TCP / UDP / ICMP
-- **IP Address / CIDR**: Target specific IPs or subnets (comma-separated)
-- **Port**: Target specific ports (comma-separated)
-- **Process Name**: Filter by application (e.g. `chrome.exe`)
+- **IP Address / CIDR**: Target specific IPs or subnets
+- **Port**: Target specific ports
 
 Live WinDivert filter preview shown in the UI.
 
@@ -46,28 +45,28 @@ Live WinDivert filter preview shown in the UI.
 
 ### Download
 
-1. Go to [Releases](../../releases) and download the latest `DelayForge.exe`
+1. Go to [Releases](../../releases) and download `DelayForge.exe`
 2. **Right-click → Run as Administrator** (required for kernel-level packet interception)
-3. Adjust parameters and click **Start**
+3. Browser opens automatically at `http://127.0.0.1:8380`
+4. Adjust parameters and click **Start**
 
-That's it — **single file, no installation, no runtime required**.
+**Single file, no installation, no runtime required.**
 
 ### Build from Source
 
-Prerequisites:
-- [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
-- Windows 10/11
+Prerequisites: [Go 1.21+](https://go.dev/dl/)
 
 ```bash
-cd src/DelayForge
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
+git clone https://github.com/cl271-7264/DelayForge.git
+cd DelayForge/cmd/delayforge
+go build -ldflags="-s -w" -o DelayForge.exe .
 ```
 
-The output `DelayForge.exe` will be in the `publish/` directory.
+You also need `WinDivert.dll` and `WinDivert64.sys` in the same directory as the exe (or in `webui/windivert/` for embedding).
 
 ## How It Works
 
-DelayForge uses [WinDivert](https://github.com/basil00/WinDivert) (Windows Packet Divert) to intercept network packets at the kernel level. Matched packets are held in userspace queues and re-injected after the configured delay, or dropped/duplicated/corrupted according to your settings.
+DelayForge uses [WinDivert](https://github.com/basil00/WinDivert) to intercept packets at the kernel level. Matched packets are held in userspace queues and re-injected after the configured delay, or dropped/duplicated/corrupted according to your settings.
 
 ```
 Application → Network Stack → WinDivert Driver → DelayForge Engine → Real Network
@@ -77,23 +76,17 @@ Application → Network Stack → WinDivert Driver → DelayForge Engine → Rea
 
 ## Usage Tips
 
-- **Testing web apps**: Set latency to 200ms + 50ms jitter + 2% loss to simulate 3G
-- **Testing game netcode**: Use 100ms latency + 20ms jitter + 0.5% loss
-- **Stress testing**: Combine 500ms latency + 10% loss + 50kbps throttle
-- **Debugging race conditions**: Use 10% reorder + 5% duplicate
-- **Filter by process**: Enter `myapp.exe` in the Process Name field to only affect your app
+- **Testing web apps**: Latency 200ms + Jitter 50ms + Loss 2% (simulate 3G)
+- **Testing game netcode**: Latency 100ms + Jitter 20ms + Loss 0.5%
+- **Stress testing**: Latency 500ms + Loss 10% + Throttle 50kbps
+- **Debugging race conditions**: Reorder 10% + Duplicate 5%
 
 ## Technical Details
 
-- **Driver**: WinDivert 2.2.2 (Microsoft WHQL signed)
-- **Framework**: .NET 9 WPF (self-contained, single-file)
-- **Architecture**: x64
-- **Packet processing**: Multi-threaded with lock-free statistics, token bucket throttle, priority queue delay scheduling
-- **No persistent installation**: Driver loads dynamically at runtime, unloaded on exit
-
-## Contributing
-
-Contributions are welcome! Please open an issue or PR.
+- **Language**: Go (static binary, no runtime dependencies)
+- **Driver**: WinDivert 2.2.2 (Microsoft WHQL signed, embedded)
+- **UI**: Web-based (served on localhost, opens in browser)
+- **Size**: ~6.4MB (single file, self-contained)
 
 ## License
 

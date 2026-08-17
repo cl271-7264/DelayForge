@@ -1,7 +1,5 @@
-bin/
-obj/
-publish/
-*.user
-*.suo
-.vs/
-*.DotSettings.user
+*.exe
+*.dll
+*.sys
+*.pdb
+cmd/delayforge/webui/windivert/
