@@ -13,22 +13,44 @@ import (
 	"time"
 )
 
-//go:embed webui/*
+//go:embed webui/index.html
 var webuiFS embed.FS
 
 var (
-	engine   *DamageEngine
-	dllPath  string
-	sysPath  string
+	engine  *DamageEngine
+	dllPath string
+	sysPath string
+	logFile *os.File
 )
 
 func main() {
-	log.SetFlags(0)
-	log.SetOutput(os.Stdout)
+	// Panic recovery — write to file so user can see what went wrong
+	defer func() {
+		if r := recover(); r != nil {
+			msg := fmt.Sprintf("PANIC: %v\n", r)
+			if logFile != nil {
+				logFile.WriteString(msg)
+				logFile.Close()
+			}
+		}
+	}()
 
-	// Find WinDivert DLL and SYS next to executable or in embedded resources
+	// Log to file instead of stdout (WinExe has no console)
+	var err error
+	logFile, err = os.Create("delayforge.log")
+	if err == nil {
+		log.SetOutput(logFile)
+	} else {
+		log.SetOutput(os.Stderr)
+	}
+	log.SetFlags(log.Ltime)
+
+	log.Println("=== DelayForge starting ===")
+
+	// Find WinDivert DLL and SYS next to executable
 	exePath, _ := os.Executable()
 	exeDir := filepath.Dir(exePath)
+	log.Printf("Exe dir: %s", exeDir)
 
 	// Try local directory first, then current working directory
 	paths := []string{
@@ -43,34 +65,50 @@ func main() {
 		if fileExists(dll) && fileExists(sys) {
 			dllPath = dll
 			sysPath = sys
+			log.Printf("Found WinDivert in: %s", dir)
 			break
 		}
 	}
 
 	if dllPath == "" {
-		// Try to extract from embedded resources (for single-file distribution)
+		// Extract from embedded DLL (we only embed the DLL, user provides SYS)
+		// Actually try to find SYS from NuGet cache or temp
+		log.Println("WinDivert not found locally, trying embedded extraction...")
 		extractDir := filepath.Join(os.TempDir(), "delayforge")
 		os.MkdirAll(extractDir, 0755)
-		extractFile(webuiFS, "windivert/WinDivert.dll", filepath.Join(extractDir, "WinDivert.dll"))
-		extractFile(webuiFS, "windivert/WinDivert64.sys", filepath.Join(extractDir, "WinDivert64.sys"))
-		if fileExists(filepath.Join(extractDir, "WinDivert.dll")) {
-			dllPath = filepath.Join(extractDir, "WinDivert.dll")
-			sysPath = filepath.Join(extractDir, "WinDivert64.sys")
+
+		// Try to find in NuGet cache
+		nugetPaths := []string{
+			filepath.Join(os.Getenv("USERPROFILE"), ".nuget", "packages", "native.windivert", "2.2.2", "runtimes", "win-x64", "native"),
+		}
+		for _, dir := range nugetPaths {
+			dll := filepath.Join(dir, "WinDivert.dll")
+			sys := filepath.Join(dir, "WinDivert64.sys")
+			if fileExists(dll) && fileExists(sys) {
+				dllPath = dll
+				sysPath = sys
+				log.Printf("Found WinDivert in NuGet cache: %s", dir)
+				break
+			}
 		}
 	}
 
 	if dllPath == "" {
-		log.Fatal("ERROR: WinDivert.dll not found. Place it next to the executable.")
+		log.Println("ERROR: WinDivert.dll and WinDivert64.sys not found!")
+		log.Println("Place them next to the exe, or in a 'windivert' subfolder.")
+		// Show message box for WinExe
+		showMessageBox("DelayForge", "WinDivert.dll and WinDivert64.sys not found.\n\nPlace them next to the exe.")
+		return
 	}
-
-	log.Printf("WinDivert DLL: %s", dllPath)
-	log.Printf("WinDivert SYS: %s", sysPath)
 
 	// Load WinDivert DLL
+	log.Println("Loading WinDivert DLL...")
 	if err := loadWinDivertDLL(dllPath); err != nil {
-		log.Fatalf("ERROR: Failed to load WinDivert: %v", err)
+		log.Printf("ERROR loading WinDivert: %v", err)
+		showMessageBox("DelayForge", fmt.Sprintf("Failed to load WinDivert:\n%v", err))
+		return
 	}
-	log.Println("WinDivert loaded successfully.")
+	log.Println("WinDivert loaded OK")
 
 	engine = NewDamageEngine()
 
@@ -83,22 +121,18 @@ func main() {
 	http.HandleFunc("/api/filter", handleFilterPreview)
 
 	port := 8380
-	if p := os.Getenv("PORT"); p != "" {
-		fmt.Sscanf(p, "%d", &port)
-	}
-
-	addr := fmt.Sprintf("http://127.0.0.1:%d", port)
-	log.Printf("DelayForge UI: %s", addr)
-	log.Println("Press Ctrl+C to stop.")
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	log.Printf("Starting HTTP server on %s", addr)
 
 	// Open browser automatically
 	go func() {
-		time.Sleep(500 * time.Millisecond)
-		openBrowser(addr)
+		time.Sleep(800 * time.Millisecond)
+		openBrowser(fmt.Sprintf("http://%s", addr))
 	}()
 
 	if err := http.ListenAndServe(addr, nil); err != nil {
-		log.Fatalf("HTTP server error: %v", err)
+		log.Printf("HTTP server error: %v", err)
+		showMessageBox("DelayForge", fmt.Sprintf("HTTP server error:\n%v", err))
 	}
 }
 
@@ -129,12 +163,14 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 
 	handle, err := winDivertOpen(filter, WINDIVERT_LAYER_NETWORK, 0, WINDIVERT_FLAG_DEFAULT)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("WinDivertOpen failed: %v\n\nAre you running as Administrator?", err), 500)
+		msg := fmt.Sprintf("WinDivertOpen failed: %v\n\nAre you running as Administrator?", err)
+		log.Println(msg)
+		http.Error(w, msg, 500)
 		return
 	}
 
 	engine.Start(handle, cfg)
-
+	log.Println("Engine started")
 	json.NewEncoder(w).Encode(map[string]string{"status": "running"})
 }
 
@@ -148,6 +184,7 @@ func handleStop(w http.ResponseWriter, r *http.Request) {
 		winDivertClose(engine.handle)
 		engine.handle = 0
 	}
+	log.Println("Engine stopped")
 	json.NewEncoder(w).Encode(map[string]string{"status": "stopped"})
 }
 
@@ -168,17 +205,17 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 func handleStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"processed":   engine.stats.Processed.Load(),
-		"bytes":       engine.stats.Bytes.Load(),
-		"delayed":     engine.stats.Delayed.Load(),
-		"dropped":     engine.stats.Dropped.Load(),
-		"duplicated":  engine.stats.Duplicated.Load(),
-		"reordered":   engine.stats.Reordered.Load(),
-		"tampered":    engine.stats.Tampered.Load(),
-		"delayQueue":  engine.delayQueue.Len(),
+		"processed":    engine.stats.Processed.Load(),
+		"bytes":        engine.stats.Bytes.Load(),
+		"delayed":      engine.stats.Delayed.Load(),
+		"dropped":      engine.stats.Dropped.Load(),
+		"duplicated":   engine.stats.Duplicated.Load(),
+		"reordered":    engine.stats.Reordered.Load(),
+		"tampered":     engine.stats.Tampered.Load(),
+		"delayQueue":   engine.delayQueue.Len(),
 		"reorderQueue": engine.reorderQueue.Len(),
 		"throttleQueue": engine.throttleQueue.Len(),
-		"running":     engine.running,
+		"running":      engine.running,
 	})
 }
 
@@ -192,14 +229,6 @@ func handleFilterPreview(w http.ResponseWriter, r *http.Request) {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
-}
-
-func extractFile(fs embed.FS, embedPath, destPath string) {
-	data, err := fs.ReadFile(embedPath)
-	if err != nil {
-		return
-	}
-	os.WriteFile(destPath, data, 0755)
 }
 
 func openBrowser(url string) {
@@ -218,4 +247,11 @@ func openBrowser(url string) {
 	}
 	c := exec.Command(cmd, args...)
 	c.Start()
+}
+
+func showMessageBox(title, msg string) {
+	// Use PowerShell to show a message box for WinExe apps
+	ps := fmt.Sprintf(`Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('%s', '%s', 'OK', 'Error')`, msg, title)
+	c := exec.Command("powershell", "-Command", ps)
+	c.Run()
 }
