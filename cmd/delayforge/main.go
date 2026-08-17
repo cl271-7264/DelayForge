@@ -31,7 +31,6 @@ func main() {
 	log.SetFlags(log.Ltime)
 	log.Println("=== DelayForge starting ===")
 
-	// Find WinDivert
 	exePath, _ := os.Executable()
 	exeDir := filepath.Dir(exePath)
 	searchPaths := []string{
@@ -49,7 +48,7 @@ func main() {
 		}
 	}
 	if dllPath == "" {
-		walk.MsgBox(nil, "Error", "WinDivert.dll not found.\nPlace it next to the exe.", walk.MsgBoxIconError)
+		walk.MsgBox(nil, "Error", "WinDivert.dll not found.", walk.MsgBoxIconError)
 		return
 	}
 	if err := loadWinDivertDLL(dllPath); err != nil {
@@ -57,179 +56,123 @@ func main() {
 		return
 	}
 	log.Println("WinDivert loaded OK")
-
 	engine = NewDamageEngine()
 
-	// --- Widget refs ---
-	var mainWindow *walk.MainWindow
+	var mw *walk.MainWindow
 	var btnToggle *walk.PushButton
-	var lblProcessed, lblBytes, lblDelayed, lblDropped *walk.Label
-	var lblDuplicated, lblReordered, lblTampered *walk.Label
-	var cmbDirection, cmbProtocol *walk.ComboBox
+	var slLat, slJit, slLoss, slDup, slReorder, slTamper, slThrottle *walk.Slider
+	var cmbDir, cmbProto *walk.ComboBox
 	var leIP, lePort *walk.LineEdit
-	var slLatency, slJitter, slLoss, slDup, slReorder, slTamper, slThrottle *walk.Slider
+	var lblP, lblB, lblD, lblDr, lblDu, lblR, lblT *walk.Label
 
 	err := MainWindow{
-		AssignTo: &mainWindow,
+		AssignTo: &mw,
 		Title:    "DelayForge",
-		MinSize:  Size{Width: 460, Height: 600},
-		Size:     Size{Width: 480, Height: 660},
+		MinSize:  Size{460, 600},
+		Size:     Size{480, 660},
 		Layout:   VBox{},
 		Children: []Widget{
-			TabWidget{
-				Pages: []TabPage{
-					{
-						Title:  "Damage",
-						Layout: VBox{Margins: Margins{Top: 8, Left: 12, Right: 12, Bottom: 8}},
-						Children: []Widget{
-							GroupBox{Title: "⏱ Latency", Layout: Grid{Columns: 3},
-								Children: []Widget{
-									Label{Text: "Delay:"},
-									Slider{AssignTo: &slLatency, MinValue: 0, MaxValue: 3000},
-									Label{Text: "ms"},
-									Label{Text: "Jitter:"},
-									Slider{AssignTo: &slJitter, MinValue: 0, MaxValue: 500},
-									Label{Text: "±ms"},
-								}},
-							GroupBox{Title: "✕ Packet Loss", Layout: Grid{Columns: 3},
-								Children: []Widget{
-									Label{Text: "Rate:"},
-									Slider{AssignTo: &slLoss, MinValue: 0, MaxValue: 100},
-									Label{Text: "%"},
-								}},
-							GroupBox{Title: "⧉ Duplicate", Layout: Grid{Columns: 3},
-								Children: []Widget{
-									Label{Text: "Rate:"},
-									Slider{AssignTo: &slDup, MinValue: 0, MaxValue: 50},
-									Label{Text: "%"},
-								}},
-							GroupBox{Title: "⇅ Reorder", Layout: Grid{Columns: 3},
-								Children: []Widget{
-									Label{Text: "Rate:"},
-									Slider{AssignTo: &slReorder, MinValue: 0, MaxValue: 50},
-									Label{Text: "%"},
-								}},
-							GroupBox{Title: "⚡ Tamper", Layout: Grid{Columns: 3},
-								Children: []Widget{
-									Label{Text: "Rate:"},
-									Slider{AssignTo: &slTamper, MinValue: 0, MaxValue: 50},
-									Label{Text: "%"},
-								}},
-							GroupBox{Title: "🔒 Throttle", Layout: Grid{Columns: 3},
-								Children: []Widget{
-									Label{Text: "Max:"},
-									Slider{AssignTo: &slThrottle, MinValue: 0, MaxValue: 10000},
-									Label{Text: "kbps"},
-								}},
-						},
-					},
-					{
-						Title:  "Filters",
-						Layout: VBox{Margins: Margins{Top: 8, Left: 12, Right: 12, Bottom: 8}},
-						Children: []Widget{
-							GroupBox{Title: "Filter Rules", Layout: Grid{Columns: 2, Spacing: 6},
-								Children: []Widget{
-									Label{Text: "Direction:"},
-									ComboBox{AssignTo: &cmbDirection, Model: []string{"Both", "Outbound", "Inbound"}, CurrentIndex: 0},
-									Label{Text: "Protocol:"},
-									ComboBox{AssignTo: &cmbProtocol, Model: []string{"All", "TCP", "UDP", "ICMP"}, CurrentIndex: 0},
-									Label{Text: "IP / CIDR:"},
-									LineEdit{AssignTo: &leIP},
-									Label{Text: "Ports:"},
-									LineEdit{AssignTo: &lePort},
-								}},
-						},
-					},
-					{
-						Title:  "Stats",
-						Layout: VBox{Margins: Margins{Top: 8, Left: 12, Right: 12, Bottom: 8}},
-						Children: []Widget{
-							GroupBox{Title: "Live Statistics", Layout: Grid{Columns: 2, Spacing: 4},
-								Children: []Widget{
-									Label{Text: "Processed:"}, Label{AssignTo: &lblProcessed, Text: "0"},
-									Label{Text: "Bytes:"}, Label{AssignTo: &lblBytes, Text: "0 B"},
-									Label{Text: "Delayed:"}, Label{AssignTo: &lblDelayed, Text: "0"},
-									Label{Text: "Dropped:"}, Label{AssignTo: &lblDropped, Text: "0"},
-									Label{Text: "Duplicated:"}, Label{AssignTo: &lblDuplicated, Text: "0"},
-									Label{Text: "Reordered:"}, Label{AssignTo: &lblReordered, Text: "0"},
-									Label{Text: "Tampered:"}, Label{AssignTo: &lblTampered, Text: "0"},
-								}},
-						},
-					},
-				},
-			},
-			Composite{
-				Layout: HBox{},
-				Children: []Widget{
-					HSpacer{},
-					PushButton{
-						AssignTo: &btnToggle,
-						Text:     "▶ Start",
-						OnClicked: func() {
-							if engine.running {
-								engine.Stop()
-								if engine.handle != 0 {
-									winDivertClose(engine.handle)
-									engine.handle = 0
-								}
-								btnToggle.SetText("▶ Start")
-								log.Println("Stopped")
-							} else {
-								cfg := getCfg(cmbDirection, cmbProtocol, leIP, lePort,
-									slLatency, slJitter, slLoss, slDup, slReorder, slTamper, slThrottle)
-								filter := BuildFilter(cfg)
-								log.Printf("Filter: %s", filter)
-								handle, err := winDivertOpen(filter, WINDIVERT_LAYER_NETWORK, 0, WINDIVERT_FLAG_DEFAULT)
-								if err != nil {
-									walk.MsgBox(mainWindow, "Error",
-										fmt.Sprintf("WinDivertOpen failed:\n%v\n\nRun as Administrator!", err),
-										walk.MsgBoxIconError)
-									return
-								}
-								engine.Start(handle, cfg)
-								btnToggle.SetText("⏹ Stop")
-								log.Println("Started")
-							}
-						},
-					},
-					HSpacer{},
-				},
-			},
+			TabWidget{Pages: []TabPage{
+				{Title: "Damage", Layout: VBox{Margins: Margins{Top: 8, Left: 12, Right: 12, Bottom: 8}}, Children: []Widget{
+					GroupBox{Title: "Latency", Layout: Grid{Columns: 2, Spacing: 8}, Children: []Widget{
+						Label{Text: "Base Delay:"}, Slider{AssignTo: &slLat, MinValue: 0, MaxValue: 3000},
+						Label{Text: "Jitter (±):"}, Slider{AssignTo: &slJit, MinValue: 0, MaxValue: 500},
+					}},
+					GroupBox{Title: "Packet Loss", Layout: Grid{Columns: 2, Spacing: 8}, Children: []Widget{
+						Label{Text: "Drop Rate:"}, Slider{AssignTo: &slLoss, MinValue: 0, MaxValue: 100},
+					}},
+					GroupBox{Title: "Duplicate", Layout: Grid{Columns: 2, Spacing: 8}, Children: []Widget{
+						Label{Text: "Rate:"}, Slider{AssignTo: &slDup, MinValue: 0, MaxValue: 50},
+					}},
+					GroupBox{Title: "Reorder", Layout: Grid{Columns: 2, Spacing: 8}, Children: []Widget{
+						Label{Text: "Rate:"}, Slider{AssignTo: &slReorder, MinValue: 0, MaxValue: 50},
+					}},
+					GroupBox{Title: "Tamper", Layout: Grid{Columns: 2, Spacing: 8}, Children: []Widget{
+						Label{Text: "Corrupt Rate:"}, Slider{AssignTo: &slTamper, MinValue: 0, MaxValue: 50},
+					}},
+					GroupBox{Title: "Bandwidth Throttle", Layout: Grid{Columns: 2, Spacing: 8}, Children: []Widget{
+						Label{Text: "Max kbps:"}, Slider{AssignTo: &slThrottle, MinValue: 0, MaxValue: 10000},
+					}},
+				}},
+				{Title: "Filters", Layout: VBox{Margins: Margins{Top: 8, Left: 12, Right: 12, Bottom: 8}}, Children: []Widget{
+					GroupBox{Title: "Filter Rules", Layout: Grid{Columns: 2, Spacing: 6}, Children: []Widget{
+						Label{Text: "Direction:"}, ComboBox{AssignTo: &cmbDir, Model: []string{"Both", "Outbound", "Inbound"}, CurrentIndex: 0},
+						Label{Text: "Protocol:"}, ComboBox{AssignTo: &cmbProto, Model: []string{"All", "TCP", "UDP", "ICMP"}, CurrentIndex: 0},
+						Label{Text: "IP / CIDR:"}, LineEdit{AssignTo: &leIP},
+						Label{Text: "Ports:"}, LineEdit{AssignTo: &lePort},
+					}},
+				}},
+				{Title: "Stats", Layout: VBox{Margins: Margins{Top: 8, Left: 12, Right: 12, Bottom: 8}}, Children: []Widget{
+					GroupBox{Title: "Live Statistics", Layout: Grid{Columns: 2, Spacing: 4}, Children: []Widget{
+						Label{Text: "Processed:"}, Label{AssignTo: &lblP, Text: "0"},
+						Label{Text: "Bytes:"}, Label{AssignTo: &lblB, Text: "0 B"},
+						Label{Text: "Delayed:"}, Label{AssignTo: &lblD, Text: "0"},
+						Label{Text: "Dropped:"}, Label{AssignTo: &lblDr, Text: "0"},
+						Label{Text: "Duplicated:"}, Label{AssignTo: &lblDu, Text: "0"},
+						Label{Text: "Reordered:"}, Label{AssignTo: &lblR, Text: "0"},
+						Label{Text: "Tampered:"}, Label{AssignTo: &lblT, Text: "0"},
+					}},
+				}},
+			}},
+			Composite{Layout: HBox{}, Children: []Widget{
+				HSpacer{},
+				PushButton{AssignTo: &btnToggle, Text: "Start", OnClicked: func() {
+					if engine.running {
+						engine.Stop()
+						if engine.handle != 0 {
+							winDivertClose(engine.handle)
+							engine.handle = 0
+						}
+						btnToggle.SetText("Start")
+					} else {
+						cfg := buildCfg(cmbDir, cmbProto, leIP, lePort, slLat, slJit, slLoss, slDup, slReorder, slTamper, slThrottle)
+						filter := BuildFilter(cfg)
+						log.Printf("Filter: %s", filter)
+						handle, e := winDivertOpen(filter, WINDIVERT_LAYER_NETWORK, 0, WINDIVERT_FLAG_DEFAULT)
+						if e != nil {
+							walk.MsgBox(mw, "Error", fmt.Sprintf("WinDivertOpen failed:\n%v\n\nRun as Administrator!", e), walk.MsgBoxIconError)
+							return
+						}
+						engine.Start(handle, cfg)
+						btnToggle.SetText("Stop")
+					}
+				}},
+				HSpacer{},
+			}},
 		},
 	}.Create()
 
 	if err != nil {
 		log.Printf("UI error: %v", err)
+		walk.MsgBox(nil, "Error", fmt.Sprintf("UI error:\n%v", err), walk.MsgBoxIconError)
 		return
 	}
 
-	// Stats refresh
 	go func() {
-		ticker := time.NewTicker(500 * time.Millisecond)
-		for range ticker.C {
-			if mainWindow == nil || mainWindow.IsDisposed() {
+		t := time.NewTicker(500 * time.Millisecond)
+		for range t.C {
+			if mw == nil || mw.IsDisposed() {
 				return
 			}
-			mainWindow.Synchronize(func() {
-				lblProcessed.SetText(strconv.FormatInt(engine.stats.Processed.Load(), 1))
-				lblBytes.SetText(fmtBytes(engine.stats.Bytes.Load()))
-				lblDelayed.SetText(strconv.FormatInt(engine.stats.Delayed.Load(), 1))
-				lblDropped.SetText(strconv.FormatInt(engine.stats.Dropped.Load(), 1))
-				lblDuplicated.SetText(strconv.FormatInt(engine.stats.Duplicated.Load(), 1))
-				lblReordered.SetText(strconv.FormatInt(engine.stats.Reordered.Load(), 1))
-				lblTampered.SetText(strconv.FormatInt(engine.stats.Tampered.Load(), 1))
+			mw.Synchronize(func() {
+				lblP.SetText(strconv.FormatInt(engine.stats.Processed.Load(), 1))
+				lblB.SetText(fmtBytes(engine.stats.Bytes.Load()))
+				lblD.SetText(strconv.FormatInt(engine.stats.Delayed.Load(), 1))
+				lblDr.SetText(strconv.FormatInt(engine.stats.Dropped.Load(), 1))
+				lblDu.SetText(strconv.FormatInt(engine.stats.Duplicated.Load(), 1))
+				lblR.SetText(strconv.FormatInt(engine.stats.Reordered.Load(), 1))
+				lblT.SetText(strconv.FormatInt(engine.stats.Tampered.Load(), 1))
 			})
 			if engine.running {
-				engine.UpdateConfig(getCfg(cmbDirection, cmbProtocol, leIP, lePort,
-					slLatency, slJitter, slLoss, slDup, slReorder, slTamper, slThrottle))
+				engine.UpdateConfig(buildCfg(cmbDir, cmbProto, leIP, lePort, slLat, slJit, slLoss, slDup, slReorder, slTamper, slThrottle))
 			}
 		}
 	}()
 
-	mainWindow.Run()
+	mw.Run()
 }
 
-func getCfg(cmbDir, cmbProto *walk.ComboBox, leIP, lePort *walk.LineEdit,
+func buildCfg(cmbDir, cmbProto *walk.ComboBox, leIP, lePort *walk.LineEdit,
 	slLat, slJit, slLoss, slDup, slReorder, slTamper, slThrottle *walk.Slider) DamageConfig {
 	dir := "both"
 	if cmbDir != nil {
@@ -259,24 +202,15 @@ func getCfg(cmbDir, cmbProto *walk.ComboBox, leIP, lePort *walk.LineEdit,
 		ip = leIP.Text()
 	}
 	return DamageConfig{
-		LatencyMs:     slLat.Value(),
-		JitterMs:      slJit.Value(),
-		PacketLossPct: float64(slLoss.Value()),
-		DuplicatePct:  float64(slDup.Value()),
-		ReorderPct:    float64(slReorder.Value()),
-		TamperPct:     float64(slTamper.Value()),
-		ThrottleKbps:  slThrottle.Value(),
-		Direction:     dir,
-		Protocol:      proto,
-		PortFilter:    port,
-		IpFilter:      ip,
+		LatencyMs: slLat.Value(), JitterMs: slJit.Value(),
+		PacketLossPct: float64(slLoss.Value()), DuplicatePct: float64(slDup.Value()),
+		ReorderPct: float64(slReorder.Value()), TamperPct: float64(slTamper.Value()),
+		ThrottleKbps: slThrottle.Value(), Direction: dir, Protocol: proto,
+		PortFilter: port, IpFilter: ip,
 	}
 }
 
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
+func fileExists(p string) bool { _, e := os.Stat(p); return e == nil }
 
 func fmtBytes(b int64) string {
 	if b < 1024 {
