@@ -6,24 +6,108 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"time"
 	"syscall"
+	"time"
 
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
 )
 
 func init() {
-	// Must be called before ANY Windows API calls
 	user32 := syscall.NewLazyDLL("user32.dll")
-	proc := user32.NewProc("SetProcessDPIAware")
-	proc.Call()
+	user32.NewProc("SetProcessDPIAware").Call()
 }
 
 var (
 	engine  *DamageEngine
 	dllPath string
+	lang    = "en" // "en" or "zh"
 )
+
+// Bilingual labels
+var L = map[string]map[string]string{
+	"en": {
+		"title":    "DelayForge",
+		"damage":   "Damage",
+		"filters":  "Filters",
+		"stats":    "Statistics",
+		"latency":  "Latency",
+		"jitter":   "Jitter (±)",
+		"loss":     "Packet Loss",
+		"dup":      "Duplicate",
+		"reorder":  "Reorder",
+		"tamper":   "Tamper (Corrupt)",
+		"throttle": "Bandwidth Throttle",
+		"rate":     "Rate",
+		"drop":     "Drop Rate",
+		"corrupt":  "Corrupt Rate",
+		"max":      "Max Bandwidth",
+		"dir":      "Direction",
+		"proto":    "Protocol",
+		"ip":       "IP / CIDR",
+		"port":     "Ports",
+		"both":     "Both",
+		"out":      "Outbound",
+		"in":       "Inbound",
+		"all":      "All",
+		"start":    "▶ Start",
+		"stop":     "⏹ Stop",
+		"proc":     "Processed",
+		"bytes":    "Bytes",
+		"delayed":  "Delayed",
+		"dropped":  "Dropped",
+		"duplicated": "Duplicated",
+		"reordered":  "Reordered",
+		"tampered":   "Tampered",
+		"live":     "Live Statistics",
+		"lang":     "中文",
+	},
+	"zh": {
+		"title":    "DelayForge 延迟锻造",
+		"damage":   "损伤参数",
+		"filters":  "过滤规则",
+		"stats":    "实时统计",
+		"latency":  "延迟",
+		"jitter":   "抖动 (±)",
+		"loss":     "丢包",
+		"dup":      "重复",
+		"reorder":  "乱序",
+		"tamper":   "篡改 (损坏)",
+		"throttle": "带宽限速",
+		"rate":     "比例",
+		"drop":     "丢包率",
+		"corrupt":  "篡改率",
+		"max":      "最大带宽",
+		"dir":      "方向",
+		"proto":    "协议",
+		"ip":       "IP / CIDR",
+		"port":     "端口",
+		"both":     "双向",
+		"out":      "仅出站",
+		"in":       "仅入站",
+		"all":      "全部",
+		"start":    "▶ 启动",
+		"stop":     "⏹ 停止",
+		"proc":     "已处理",
+		"bytes":    "字节数",
+		"delayed":  "已延迟",
+		"dropped":  "已丢弃",
+		"duplicated": "已复制",
+		"reordered":  "已乱序",
+		"tampered":   "已篡改",
+		"live":     "实时统计",
+		"lang":     "EN",
+	},
+}
+
+func t(key string) string {
+	if m, ok := L[lang]; ok {
+		if v, ok := m[key]; ok {
+			return v
+		}
+	}
+	return key
+}
 
 func main() {
 	defer func() {
@@ -67,7 +151,7 @@ func main() {
 	engine = NewDamageEngine()
 
 	var mw *walk.MainWindow
-	var btnToggle *walk.PushButton
+	var btnToggle, btnLang *walk.PushButton
 	var slLat, slJit, slLoss, slDup, slReorder, slTamper, slThrottle *walk.Slider
 	var cmbDir, cmbProto *walk.ComboBox
 	var leIP, lePort *walk.LineEdit
@@ -75,63 +159,82 @@ func main() {
 
 	err := MainWindow{
 		AssignTo: &mw,
-		Title:    "DelayForge",
-		MinSize:  Size{460, 600},
-		Size:     Size{480, 660},
+		Title:    t("title"),
+		MinSize:  Size{480, 640},
+		Size:     Size{500, 700},
 		Layout:   VBox{},
 		Children: []Widget{
+			// Language toggle
+			Composite{Layout: HBox{}, Children: []Widget{
+				HSpacer{},
+				PushButton{AssignTo: &btnLang, Text: t("lang"), OnClicked: func() {
+					if lang == "en" {
+						lang = "zh"
+					} else {
+						lang = "en"
+					}
+					mw.SetTitle(t("title"))
+					btnLang.SetText(t("lang"))
+				}},
+			}},
 			TabWidget{Pages: []TabPage{
-				{Title: "Damage", Layout: VBox{Margins: Margins{Top: 8, Left: 12, Right: 12, Bottom: 8}}, Children: []Widget{
-					GroupBox{Title: "Latency", Layout: Grid{Columns: 2, Spacing: 8}, Children: []Widget{
-						Label{Text: "Base Delay:"}, Slider{AssignTo: &slLat, MinValue: 0, MaxValue: 3000},
-						Label{Text: "Jitter (±):"}, Slider{AssignTo: &slJit, MinValue: 0, MaxValue: 500},
+				// === Damage ===
+				{Title: t("damage"), Layout: VBox{Margins: Margins{Top: 10, Left: 16, Right: 16, Bottom: 10}}, Children: []Widget{
+					GroupBox{Title: t("latency"), Layout: Grid{Columns: 3, Spacing: 8, Margins: Margins{Left: 8, Right: 8}}, Children: []Widget{
+						Label{Text: t("latency") + ":"}, Slider{AssignTo: &slLat, MinValue: 0, MaxValue: 3000}, Label{Text: "ms"},
 					}},
-					GroupBox{Title: "Packet Loss", Layout: Grid{Columns: 2, Spacing: 8}, Children: []Widget{
-						Label{Text: "Drop Rate:"}, Slider{AssignTo: &slLoss, MinValue: 0, MaxValue: 100},
+					GroupBox{Title: t("jitter"), Layout: Grid{Columns: 3, Spacing: 8, Margins: Margins{Left: 8, Right: 8}}, Children: []Widget{
+						Label{Text: t("jitter") + ":"}, Slider{AssignTo: &slJit, MinValue: 0, MaxValue: 500}, Label{Text: "ms"},
 					}},
-					GroupBox{Title: "Duplicate", Layout: Grid{Columns: 2, Spacing: 8}, Children: []Widget{
-						Label{Text: "Rate:"}, Slider{AssignTo: &slDup, MinValue: 0, MaxValue: 50},
+					GroupBox{Title: t("loss"), Layout: Grid{Columns: 3, Spacing: 8, Margins: Margins{Left: 8, Right: 8}}, Children: []Widget{
+						Label{Text: t("drop") + ":"}, Slider{AssignTo: &slLoss, MinValue: 0, MaxValue: 100}, Label{Text: "%"},
 					}},
-					GroupBox{Title: "Reorder", Layout: Grid{Columns: 2, Spacing: 8}, Children: []Widget{
-						Label{Text: "Rate:"}, Slider{AssignTo: &slReorder, MinValue: 0, MaxValue: 50},
+					GroupBox{Title: t("dup"), Layout: Grid{Columns: 3, Spacing: 8, Margins: Margins{Left: 8, Right: 8}}, Children: []Widget{
+						Label{Text: t("rate") + ":"}, Slider{AssignTo: &slDup, MinValue: 0, MaxValue: 50}, Label{Text: "%"},
 					}},
-					GroupBox{Title: "Tamper", Layout: Grid{Columns: 2, Spacing: 8}, Children: []Widget{
-						Label{Text: "Corrupt Rate:"}, Slider{AssignTo: &slTamper, MinValue: 0, MaxValue: 50},
+					GroupBox{Title: t("reorder"), Layout: Grid{Columns: 3, Spacing: 8, Margins: Margins{Left: 8, Right: 8}}, Children: []Widget{
+						Label{Text: t("rate") + ":"}, Slider{AssignTo: &slReorder, MinValue: 0, MaxValue: 50}, Label{Text: "%"},
 					}},
-					GroupBox{Title: "Bandwidth Throttle", Layout: Grid{Columns: 2, Spacing: 8}, Children: []Widget{
-						Label{Text: "Max kbps:"}, Slider{AssignTo: &slThrottle, MinValue: 0, MaxValue: 10000},
+					GroupBox{Title: t("tamper"), Layout: Grid{Columns: 3, Spacing: 8, Margins: Margins{Left: 8, Right: 8}}, Children: []Widget{
+						Label{Text: t("corrupt") + ":"}, Slider{AssignTo: &slTamper, MinValue: 0, MaxValue: 50}, Label{Text: "%"},
 					}},
-				}},
-				{Title: "Filters", Layout: VBox{Margins: Margins{Top: 8, Left: 12, Right: 12, Bottom: 8}}, Children: []Widget{
-					GroupBox{Title: "Filter Rules", Layout: Grid{Columns: 2, Spacing: 6}, Children: []Widget{
-						Label{Text: "Direction:"}, ComboBox{AssignTo: &cmbDir, Model: []string{"Both", "Outbound", "Inbound"}, CurrentIndex: 0},
-						Label{Text: "Protocol:"}, ComboBox{AssignTo: &cmbProto, Model: []string{"All", "TCP", "UDP", "ICMP"}, CurrentIndex: 0},
-						Label{Text: "IP / CIDR:"}, LineEdit{AssignTo: &leIP},
-						Label{Text: "Ports:"}, LineEdit{AssignTo: &lePort},
+					GroupBox{Title: t("throttle"), Layout: Grid{Columns: 3, Spacing: 8, Margins: Margins{Left: 8, Right: 8}}, Children: []Widget{
+						Label{Text: t("max") + ":"}, Slider{AssignTo: &slThrottle, MinValue: 0, MaxValue: 10000}, Label{Text: "kbps"},
 					}},
 				}},
-				{Title: "Stats", Layout: VBox{Margins: Margins{Top: 8, Left: 12, Right: 12, Bottom: 8}}, Children: []Widget{
-					GroupBox{Title: "Live Statistics", Layout: Grid{Columns: 2, Spacing: 4}, Children: []Widget{
-						Label{Text: "Processed:"}, Label{AssignTo: &lblP, Text: "0"},
-						Label{Text: "Bytes:"}, Label{AssignTo: &lblB, Text: "0 B"},
-						Label{Text: "Delayed:"}, Label{AssignTo: &lblD, Text: "0"},
-						Label{Text: "Dropped:"}, Label{AssignTo: &lblDr, Text: "0"},
-						Label{Text: "Duplicated:"}, Label{AssignTo: &lblDu, Text: "0"},
-						Label{Text: "Reordered:"}, Label{AssignTo: &lblR, Text: "0"},
-						Label{Text: "Tampered:"}, Label{AssignTo: &lblT, Text: "0"},
+				// === Filters ===
+				{Title: t("filters"), Layout: VBox{Margins: Margins{Top: 10, Left: 16, Right: 16, Bottom: 10}}, Children: []Widget{
+					GroupBox{Title: t("filters"), Layout: Grid{Columns: 2, Spacing: 8, Margins: Margins{Left: 8, Right: 8, Top: 8, Bottom: 8}}, Children: []Widget{
+						Label{Text: t("dir") + ":"}, ComboBox{AssignTo: &cmbDir, Model: []string{t("both"), t("out"), t("in")}, CurrentIndex: 0},
+						Label{Text: t("proto") + ":"}, ComboBox{AssignTo: &cmbProto, Model: []string{t("all"), "TCP", "UDP", "ICMP"}, CurrentIndex: 0},
+						Label{Text: t("ip") + ":"}, LineEdit{AssignTo: &leIP},
+						Label{Text: t("port") + ":"}, LineEdit{AssignTo: &lePort},
+					}},
+				}},
+				// === Stats ===
+				{Title: t("stats"), Layout: VBox{Margins: Margins{Top: 10, Left: 16, Right: 16, Bottom: 10}}, Children: []Widget{
+					GroupBox{Title: t("live"), Layout: Grid{Columns: 2, Spacing: 6, Margins: Margins{Left: 8, Right: 8, Top: 8, Bottom: 8}}, Children: []Widget{
+						Label{Text: t("proc") + ":"}, Label{AssignTo: &lblP, Text: "0"},
+						Label{Text: t("bytes") + ":"}, Label{AssignTo: &lblB, Text: "0 B"},
+						Label{Text: t("delayed") + ":"}, Label{AssignTo: &lblD, Text: "0"},
+						Label{Text: t("dropped") + ":"}, Label{AssignTo: &lblDr, Text: "0"},
+						Label{Text: t("duplicated") + ":"}, Label{AssignTo: &lblDu, Text: "0"},
+						Label{Text: t("reordered") + ":"}, Label{AssignTo: &lblR, Text: "0"},
+						Label{Text: t("tampered") + ":"}, Label{AssignTo: &lblT, Text: "0"},
 					}},
 				}},
 			}},
-			Composite{Layout: HBox{}, Children: []Widget{
+			// === Start/Stop ===
+			Composite{Layout: HBox{Margins: Margins{Top: 4, Bottom: 8}}, Children: []Widget{
 				HSpacer{},
-				PushButton{AssignTo: &btnToggle, Text: "Start", OnClicked: func() {
+				PushButton{AssignTo: &btnToggle, Text: t("start"), MinSize: Size{120, 36}, OnClicked: func() {
 					if engine.running {
 						engine.Stop()
 						if engine.handle != 0 {
 							winDivertClose(engine.handle)
 							engine.handle = 0
 						}
-						btnToggle.SetText("Start")
+						btnToggle.SetText(t("start"))
 					} else {
 						cfg := buildCfg(cmbDir, cmbProto, leIP, lePort, slLat, slJit, slLoss, slDup, slReorder, slTamper, slThrottle)
 						filter := BuildFilter(cfg)
@@ -142,7 +245,7 @@ func main() {
 							return
 						}
 						engine.Start(handle, cfg)
-						btnToggle.SetText("Stop")
+						btnToggle.SetText(t("stop"))
 					}
 				}},
 				HSpacer{},
@@ -156,9 +259,10 @@ func main() {
 		return
 	}
 
+	// Stats refresh
 	go func() {
-		t := time.NewTicker(500 * time.Millisecond)
-		for range t.C {
+		tk := time.NewTicker(500 * time.Millisecond)
+		for range tk.C {
 			if mw == nil || mw.IsDisposed() {
 				return
 			}
