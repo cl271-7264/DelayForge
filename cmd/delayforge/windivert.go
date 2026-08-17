@@ -64,7 +64,8 @@ func loadWinDivertDLL(path string) error {
 }
 
 func getProc(name string) uintptr {
-	ret, _, _ := procGetProcAddress.Call(hMod, uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(name))))
+	nameBytes, _ := syscall.BytePtrFromString(name)
+	ret, _, _ := procGetProcAddress.Call(hMod, uintptr(unsafe.Pointer(nameBytes)))
 	return ret
 }
 
