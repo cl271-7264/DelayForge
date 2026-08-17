@@ -9,105 +9,22 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/lxn/walk"
-	. "github.com/lxn/walk/declarative"
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
 )
 
 func init() {
-	user32 := syscall.NewLazyDLL("user32.dll")
-	user32.NewProc("SetProcessDPIAware").Call()
+	syscall.NewLazyDLL("user32.dll").NewProc("SetProcessDPIAware").Call()
 }
 
 var (
 	engine  *DamageEngine
 	dllPath string
-	lang    = "en" // "en" or "zh"
 )
-
-// Bilingual labels
-var L = map[string]map[string]string{
-	"en": {
-		"title":    "DelayForge",
-		"damage":   "Damage",
-		"filters":  "Filters",
-		"stats":    "Statistics",
-		"latency":  "Latency",
-		"jitter":   "Jitter (±)",
-		"loss":     "Packet Loss",
-		"dup":      "Duplicate",
-		"reorder":  "Reorder",
-		"tamper":   "Tamper (Corrupt)",
-		"throttle": "Bandwidth Throttle",
-		"rate":     "Rate",
-		"drop":     "Drop Rate",
-		"corrupt":  "Corrupt Rate",
-		"max":      "Max Bandwidth",
-		"dir":      "Direction",
-		"proto":    "Protocol",
-		"ip":       "IP / CIDR",
-		"port":     "Ports",
-		"both":     "Both",
-		"out":      "Outbound",
-		"in":       "Inbound",
-		"all":      "All",
-		"start":    "▶ Start",
-		"stop":     "⏹ Stop",
-		"proc":     "Processed",
-		"bytes":    "Bytes",
-		"delayed":  "Delayed",
-		"dropped":  "Dropped",
-		"duplicated": "Duplicated",
-		"reordered":  "Reordered",
-		"tampered":   "Tampered",
-		"live":     "Live Statistics",
-		"lang":     "中文",
-	},
-	"zh": {
-		"title":    "DelayForge 延迟锻造",
-		"damage":   "损伤参数",
-		"filters":  "过滤规则",
-		"stats":    "实时统计",
-		"latency":  "延迟",
-		"jitter":   "抖动 (±)",
-		"loss":     "丢包",
-		"dup":      "重复",
-		"reorder":  "乱序",
-		"tamper":   "篡改 (损坏)",
-		"throttle": "带宽限速",
-		"rate":     "比例",
-		"drop":     "丢包率",
-		"corrupt":  "篡改率",
-		"max":      "最大带宽",
-		"dir":      "方向",
-		"proto":    "协议",
-		"ip":       "IP / CIDR",
-		"port":     "端口",
-		"both":     "双向",
-		"out":      "仅出站",
-		"in":       "仅入站",
-		"all":      "全部",
-		"start":    "▶ 启动",
-		"stop":     "⏹ 停止",
-		"proc":     "已处理",
-		"bytes":    "字节数",
-		"delayed":  "已延迟",
-		"dropped":  "已丢弃",
-		"duplicated": "已复制",
-		"reordered":  "已乱序",
-		"tampered":   "已篡改",
-		"live":     "实时统计",
-		"lang":     "EN",
-	},
-}
-
-func t(key string) string {
-	if m, ok := L[lang]; ok {
-		if v, ok := m[key]; ok {
-			return v
-		}
-	}
-	return key
-}
 
 func main() {
 	defer func() {
@@ -140,185 +57,191 @@ func main() {
 		}
 	}
 	if dllPath == "" {
-		walk.MsgBox(nil, "Error", "WinDivert.dll not found.", walk.MsgBoxIconError)
+		fmt.Println("WinDivert.dll not found!")
 		return
 	}
 	if err := loadWinDivertDLL(dllPath); err != nil {
-		walk.MsgBox(nil, "Error", fmt.Sprintf("Load WinDivert failed:\n%v", err), walk.MsgBoxIconError)
+		fmt.Printf("Load WinDivert failed: %v\n", err)
 		return
 	}
 	log.Println("WinDivert loaded OK")
 	engine = NewDamageEngine()
 
-	var mw *walk.MainWindow
-	var btnToggle, btnLang *walk.PushButton
-	var slLat, slJit, slLoss, slDup, slReorder, slTamper, slThrottle *walk.Slider
-	var cmbDir, cmbProto *walk.ComboBox
-	var leIP, lePort *walk.LineEdit
-	var lblP, lblB, lblD, lblDr, lblDu, lblR, lblT *walk.Label
+	myApp := app.New()
+	myWindow := myApp.NewWindow("DelayForge")
+	myWindow.Resize(fyne.NewSize(520, 700))
 
-	err := MainWindow{
-		AssignTo: &mw,
-		Title:    t("title"),
-		MinSize:  Size{480, 640},
-		Size:     Size{500, 700},
-		Layout:   VBox{},
-		Children: []Widget{
-			// Language toggle
-			Composite{Layout: HBox{}, Children: []Widget{
-				HSpacer{},
-				PushButton{AssignTo: &btnLang, Text: t("lang"), OnClicked: func() {
-					if lang == "en" {
-						lang = "zh"
-					} else {
-						lang = "en"
-					}
-					mw.SetTitle(t("title"))
-					btnLang.SetText(t("lang"))
-				}},
-			}},
-			TabWidget{Pages: []TabPage{
-				// === Damage ===
-				{Title: t("damage"), Layout: VBox{Margins: Margins{Top: 10, Left: 16, Right: 16, Bottom: 10}}, Children: []Widget{
-					GroupBox{Title: t("latency"), Layout: Grid{Columns: 3, Spacing: 8, Margins: Margins{Left: 8, Right: 8}}, Children: []Widget{
-						Label{Text: t("latency") + ":"}, Slider{AssignTo: &slLat, MinValue: 0, MaxValue: 3000}, Label{Text: "ms"},
-					}},
-					GroupBox{Title: t("jitter"), Layout: Grid{Columns: 3, Spacing: 8, Margins: Margins{Left: 8, Right: 8}}, Children: []Widget{
-						Label{Text: t("jitter") + ":"}, Slider{AssignTo: &slJit, MinValue: 0, MaxValue: 500}, Label{Text: "ms"},
-					}},
-					GroupBox{Title: t("loss"), Layout: Grid{Columns: 3, Spacing: 8, Margins: Margins{Left: 8, Right: 8}}, Children: []Widget{
-						Label{Text: t("drop") + ":"}, Slider{AssignTo: &slLoss, MinValue: 0, MaxValue: 100}, Label{Text: "%"},
-					}},
-					GroupBox{Title: t("dup"), Layout: Grid{Columns: 3, Spacing: 8, Margins: Margins{Left: 8, Right: 8}}, Children: []Widget{
-						Label{Text: t("rate") + ":"}, Slider{AssignTo: &slDup, MinValue: 0, MaxValue: 50}, Label{Text: "%"},
-					}},
-					GroupBox{Title: t("reorder"), Layout: Grid{Columns: 3, Spacing: 8, Margins: Margins{Left: 8, Right: 8}}, Children: []Widget{
-						Label{Text: t("rate") + ":"}, Slider{AssignTo: &slReorder, MinValue: 0, MaxValue: 50}, Label{Text: "%"},
-					}},
-					GroupBox{Title: t("tamper"), Layout: Grid{Columns: 3, Spacing: 8, Margins: Margins{Left: 8, Right: 8}}, Children: []Widget{
-						Label{Text: t("corrupt") + ":"}, Slider{AssignTo: &slTamper, MinValue: 0, MaxValue: 50}, Label{Text: "%"},
-					}},
-					GroupBox{Title: t("throttle"), Layout: Grid{Columns: 3, Spacing: 8, Margins: Margins{Left: 8, Right: 8}}, Children: []Widget{
-						Label{Text: t("max") + ":"}, Slider{AssignTo: &slThrottle, MinValue: 0, MaxValue: 10000}, Label{Text: "kbps"},
-					}},
-				}},
-				// === Filters ===
-				{Title: t("filters"), Layout: VBox{Margins: Margins{Top: 10, Left: 16, Right: 16, Bottom: 10}}, Children: []Widget{
-					GroupBox{Title: t("filters"), Layout: Grid{Columns: 2, Spacing: 8, Margins: Margins{Left: 8, Right: 8, Top: 8, Bottom: 8}}, Children: []Widget{
-						Label{Text: t("dir") + ":"}, ComboBox{AssignTo: &cmbDir, Model: []string{t("both"), t("out"), t("in")}, CurrentIndex: 0},
-						Label{Text: t("proto") + ":"}, ComboBox{AssignTo: &cmbProto, Model: []string{t("all"), "TCP", "UDP", "ICMP"}, CurrentIndex: 0},
-						Label{Text: t("ip") + ":"}, LineEdit{AssignTo: &leIP},
-						Label{Text: t("port") + ":"}, LineEdit{AssignTo: &lePort},
-					}},
-				}},
-				// === Stats ===
-				{Title: t("stats"), Layout: VBox{Margins: Margins{Top: 10, Left: 16, Right: 16, Bottom: 10}}, Children: []Widget{
-					GroupBox{Title: t("live"), Layout: Grid{Columns: 2, Spacing: 6, Margins: Margins{Left: 8, Right: 8, Top: 8, Bottom: 8}}, Children: []Widget{
-						Label{Text: t("proc") + ":"}, Label{AssignTo: &lblP, Text: "0"},
-						Label{Text: t("bytes") + ":"}, Label{AssignTo: &lblB, Text: "0 B"},
-						Label{Text: t("delayed") + ":"}, Label{AssignTo: &lblD, Text: "0"},
-						Label{Text: t("dropped") + ":"}, Label{AssignTo: &lblDr, Text: "0"},
-						Label{Text: t("duplicated") + ":"}, Label{AssignTo: &lblDu, Text: "0"},
-						Label{Text: t("reordered") + ":"}, Label{AssignTo: &lblR, Text: "0"},
-						Label{Text: t("tampered") + ":"}, Label{AssignTo: &lblT, Text: "0"},
-					}},
-				}},
-			}},
-			// === Start/Stop ===
-			Composite{Layout: HBox{Margins: Margins{Top: 4, Bottom: 8}}, Children: []Widget{
-				HSpacer{},
-				PushButton{AssignTo: &btnToggle, Text: t("start"), MinSize: Size{120, 36}, OnClicked: func() {
-					if engine.running {
-						engine.Stop()
-						if engine.handle != 0 {
-							winDivertClose(engine.handle)
-							engine.handle = 0
-						}
-						btnToggle.SetText(t("start"))
-					} else {
-						cfg := buildCfg(cmbDir, cmbProto, leIP, lePort, slLat, slJit, slLoss, slDup, slReorder, slTamper, slThrottle)
-						filter := BuildFilter(cfg)
-						log.Printf("Filter: %s", filter)
-						handle, e := winDivertOpen(filter, WINDIVERT_LAYER_NETWORK, 0, WINDIVERT_FLAG_DEFAULT)
-						if e != nil {
-							walk.MsgBox(mw, "Error", fmt.Sprintf("WinDivertOpen failed:\n%v\n\nRun as Administrator!", e), walk.MsgBoxIconError)
-							return
-						}
-						engine.Start(handle, cfg)
-						btnToggle.SetText(t("stop"))
-					}
-				}},
-				HSpacer{},
-			}},
-		},
-	}.Create()
+	// --- Sliders ---
+	slLat := widget.NewSlider(0, 3000)
+	slJit := widget.NewSlider(0, 500)
+	slLoss := widget.NewSlider(0, 100)
+	slDup := widget.NewSlider(0, 50)
+	slReorder := widget.NewSlider(0, 50)
+	slTamper := widget.NewSlider(0, 50)
+	slThrottle := widget.NewSlider(0, 10000)
+	slThrottle.Step = 10
 
-	if err != nil {
-		log.Printf("UI error: %v", err)
-		walk.MsgBox(nil, "Error", fmt.Sprintf("UI error:\n%v", err), walk.MsgBoxIconError)
-		return
+	// --- Labels for slider values ---
+	lblLat := widget.NewLabel("0 ms")
+	lblJit := widget.NewLabel("0 ms")
+	lblLoss := widget.NewLabel("0 %")
+	lblDup := widget.NewLabel("0 %")
+	lblReorder := widget.NewLabel("0 %")
+	lblTamper := widget.NewLabel("0 %")
+	lblThrottle := widget.NewLabel("0 kbps")
+
+	slLat.OnChanged = func(v float64) { lblLat.SetText(fmt.Sprintf("%d ms", int(v))) }
+	slJit.OnChanged = func(v float64) { lblJit.SetText(fmt.Sprintf("%d ms", int(v))) }
+	slLoss.OnChanged = func(v float64) { lblLoss.SetText(fmt.Sprintf("%d %%", int(v))) }
+	slDup.OnChanged = func(v float64) { lblDup.SetText(fmt.Sprintf("%d %%", int(v))) }
+	slReorder.OnChanged = func(v float64) { lblReorder.SetText(fmt.Sprintf("%d %%", int(v))) }
+	slTamper.OnChanged = func(v float64) { lblTamper.SetText(fmt.Sprintf("%d %%", int(v))) }
+	slThrottle.OnChanged = func(v float64) { lblThrottle.SetText(fmt.Sprintf("%d kbps", int(v))) }
+
+	// --- Filters ---
+	cmbDir := widget.NewSelect([]string{"双向 Both", "出站 Outbound", "入站 Inbound"}, nil)
+	cmbDir.SetSelected("双向 Both")
+	cmbProto := widget.NewSelect([]string{"全部 All", "TCP", "UDP", "ICMP"}, nil)
+	cmbProto.SetSelected("全部 All")
+	leIP := widget.NewEntry()
+	leIP.SetPlaceHolder("e.g. 192.168.1.0/24")
+	lePort := widget.NewEntry()
+	lePort.SetPlaceHolder("e.g. 80, 443")
+
+	// --- Stats ---
+	statP := widget.NewLabel("0")
+	statB := widget.NewLabel("0 B")
+	statD := widget.NewLabel("0")
+	statDr := widget.NewLabel("0")
+	statDu := widget.NewLabel("0")
+	statR := widget.NewLabel("0")
+	statT := widget.NewLabel("0")
+
+	// --- Start/Stop ---
+	running := false
+	btn := widget.NewButtonWithIcon("▶  启动 Start", theme.MediaPlayIcon(), func() {})
+	btn.Importance = widget.HighImportance
+
+	btn.OnTapped = func() {
+		if running {
+			engine.Stop()
+			if engine.handle != 0 {
+				winDivertClose(engine.handle)
+				engine.handle = 0
+			}
+			running = false
+			btn.SetText("▶  启动 Start")
+			btn.SetIcon(theme.MediaPlayIcon())
+		} else {
+			cfg := getCfg(cmbDir, cmbProto, leIP, lePort, slLat, slJit, slLoss, slDup, slReorder, slTamper, slThrottle)
+			filter := BuildFilter(cfg)
+			log.Printf("Filter: %s", filter)
+			handle, e := winDivertOpen(filter, WINDIVERT_LAYER_NETWORK, 0, WINDIVERT_FLAG_DEFAULT)
+			if e != nil {
+				dialog.ShowError(fmt.Errorf("WinDivertOpen failed:\n%v\n\nRun as Administrator!", e), myWindow)
+				return
+			}
+			engine.Start(handle, cfg)
+			running = true
+			btn.SetText("⏹  停止 Stop")
+			btn.SetIcon(theme.MediaStopIcon())
+		}
 	}
+
+	// --- Build UI ---
+	makeSlider := func(label string, sl *widget.Slider, lbl *widget.Label) fyne.CanvasObject {
+		return container.NewBorder(nil, nil, widget.NewLabel(label), lbl, sl)
+	}
+
+	damageTab := container.NewVBox(
+		widget.NewLabel("损伤 Damage Parameters"),
+		widget.NewSeparator(),
+		makeSlider("延迟 Latency:", slLat, lblLat),
+		makeSlider("抖动 Jitter:", slJit, lblJit),
+		makeSlider("丢包 Loss:", slLoss, lblLoss),
+		makeSlider("重复 Dup:", slDup, lblDup),
+		makeSlider("乱序 Reorder:", slReorder, lblReorder),
+		makeSlider("篡改 Tamper:", slTamper, lblTamper),
+		makeSlider("限速 Throttle:", slThrottle, lblThrottle),
+	)
+
+	filterTab := container.NewVBox(
+		widget.NewLabel("过滤规则 Filter Rules"),
+		widget.NewSeparator(),
+		widget.NewLabel("方向 Direction:"), cmbDir,
+		widget.NewLabel("协议 Protocol:"), cmbProto,
+		widget.NewLabel("IP / CIDR:"), leIP,
+		widget.NewLabel("端口 Ports:"), lePort,
+	)
+
+	statsTab := container.NewVBox(
+		widget.NewLabel("实时统计 Live Statistics"),
+		widget.NewSeparator(),
+		container.NewGridWithColumns(2,
+			widget.NewLabel("已处理 Processed:"), statP,
+			widget.NewLabel("字节数 Bytes:"), statB,
+			widget.NewLabel("已延迟 Delayed:"), statD,
+			widget.NewLabel("已丢弃 Dropped:"), statDr,
+			widget.NewLabel("已复制 Duplicated:"), statDu,
+			widget.NewLabel("已乱序 Reordered:"), statR,
+			widget.NewLabel("已篡改 Tampered:"), statT,
+		),
+	)
+
+	tabs := container.NewAppTabs(
+		container.NewTabItem("损伤 Damage", damageTab),
+		container.NewTabItem("过滤 Filters", filterTab),
+		container.NewTabItem("统计 Stats", statsTab),
+	)
+	tabs.SetTabLocation(container.TabLocationTop)
+
+	content := container.NewBorder(nil, container.NewPadded(btn), nil, nil, tabs)
+	myWindow.SetContent(content)
 
 	// Stats refresh
 	go func() {
 		tk := time.NewTicker(500 * time.Millisecond)
 		for range tk.C {
-			if mw == nil || mw.IsDisposed() {
-				return
-			}
-			mw.Synchronize(func() {
-				lblP.SetText(strconv.FormatInt(engine.stats.Processed.Load(), 10))
-				lblB.SetText(fmtBytes(engine.stats.Bytes.Load()))
-				lblD.SetText(strconv.FormatInt(engine.stats.Delayed.Load(), 10))
-				lblDr.SetText(strconv.FormatInt(engine.stats.Dropped.Load(), 10))
-				lblDu.SetText(strconv.FormatInt(engine.stats.Duplicated.Load(), 10))
-				lblR.SetText(strconv.FormatInt(engine.stats.Reordered.Load(), 10))
-				lblT.SetText(strconv.FormatInt(engine.stats.Tampered.Load(), 10))
-			})
-			if engine.running {
-				engine.UpdateConfig(buildCfg(cmbDir, cmbProto, leIP, lePort, slLat, slJit, slLoss, slDup, slReorder, slTamper, slThrottle))
+			statP.SetText(strconv.FormatInt(engine.stats.Processed.Load(), 10))
+			statB.SetText(fmtBytes(engine.stats.Bytes.Load()))
+			statD.SetText(strconv.FormatInt(engine.stats.Delayed.Load(), 10))
+			statDr.SetText(strconv.FormatInt(engine.stats.Dropped.Load(), 10))
+			statDu.SetText(strconv.FormatInt(engine.stats.Duplicated.Load(), 10))
+			statR.SetText(strconv.FormatInt(engine.stats.Reordered.Load(), 10))
+			statT.SetText(strconv.FormatInt(engine.stats.Tampered.Load(), 10))
+			if running {
+				engine.UpdateConfig(getCfg(cmbDir, cmbProto, leIP, lePort, slLat, slJit, slLoss, slDup, slReorder, slTamper, slThrottle))
 			}
 		}
 	}()
 
-	mw.Run()
+	myWindow.ShowAndRun()
 }
 
-func buildCfg(cmbDir, cmbProto *walk.ComboBox, leIP, lePort *walk.LineEdit,
-	slLat, slJit, slLoss, slDup, slReorder, slTamper, slThrottle *walk.Slider) DamageConfig {
+func getCfg(cmbDir *widget.Select, cmbProto *widget.Select, leIP, lePort *widget.Entry,
+	slLat, slJit, slLoss, slDup, slReorder, slTamper, slThrottle *widget.Slider) DamageConfig {
 	dir := "both"
-	if cmbDir != nil {
-		switch cmbDir.CurrentIndex() {
-		case 1:
-			dir = "outbound"
-		case 2:
-			dir = "inbound"
-		}
+	switch cmbDir.Selected {
+	case "出站 Outbound":
+		dir = "outbound"
+	case "入站 Inbound":
+		dir = "inbound"
 	}
 	proto := "any"
-	if cmbProto != nil {
-		switch cmbProto.CurrentIndex() {
-		case 1:
-			proto = "tcp"
-		case 2:
-			proto = "udp"
-		case 3:
-			proto = "icmp"
-		}
-	}
-	port, ip := "", ""
-	if lePort != nil {
-		port = lePort.Text()
-	}
-	if leIP != nil {
-		ip = leIP.Text()
+	switch cmbProto.Selected {
+	case "TCP":
+		proto = "tcp"
+	case "UDP":
+		proto = "udp"
+	case "ICMP":
+		proto = "icmp"
 	}
 	return DamageConfig{
-		LatencyMs: slLat.Value(), JitterMs: slJit.Value(),
-		PacketLossPct: float64(slLoss.Value()), DuplicatePct: float64(slDup.Value()),
-		ReorderPct: float64(slReorder.Value()), TamperPct: float64(slTamper.Value()),
-		ThrottleKbps: slThrottle.Value(), Direction: dir, Protocol: proto,
-		PortFilter: port, IpFilter: ip,
+		LatencyMs: int(slLat.Value), JitterMs: int(slJit.Value),
+		PacketLossPct: slLoss.Value, DuplicatePct: slDup.Value,
+		ReorderPct: slReorder.Value, TamperPct: slTamper.Value,
+		ThrottleKbps: int(slThrottle.Value), Direction: dir, Protocol: proto,
+		PortFilter: lePort.Text, IpFilter: leIP.Text,
 	}
 }
 
