@@ -119,7 +119,7 @@ func main() {
 
 	// --- Start/Stop ---
 	running := false
-	btn := widget.NewButtonWithIcon("▶  启动 Start", theme.MediaPlayIcon(), func() {})
+	btn := widget.NewButtonWithIcon("启动 Start", theme.MediaPlayIcon(), func() {})
 	btn.Importance = widget.HighImportance
 
 	btn.OnTapped = func() {
@@ -130,7 +130,7 @@ func main() {
 				engine.handle = 0
 			}
 			running = false
-			btn.SetText("▶  启动 Start")
+			btn.SetText("启动 Start")
 			btn.SetIcon(theme.MediaPlayIcon())
 		} else {
 			cfg := getCfg(cmbDir, cmbProto, leIP, lePort, slLat, slJit, slLoss, slDup, slReorder, slTamper, slThrottle)
@@ -143,7 +143,7 @@ func main() {
 			}
 			engine.Start(handle, cfg)
 			running = true
-			btn.SetText("⏹  停止 Stop")
+			btn.SetText("停止 Stop")
 			btn.SetIcon(theme.MediaStopIcon())
 		}
 	}
