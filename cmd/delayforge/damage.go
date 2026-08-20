@@ -165,9 +165,36 @@ func (e *DamageEngine) Start(handle uintptr, config DamageConfig) error {
 	e.running = true
 	e.stopCh = make(chan struct{})
 
+	go e.recvLoop()
 	go e.delayQueueLoop()
 	go e.throttleQueueLoop()
 	return nil
+}
+
+// recvLoop reads packets from WinDivert and processes them
+func (e *DamageEngine) recvLoop() {
+	buf := make([]byte, 65535)
+	for {
+		select {
+		case <-e.stopCh:
+			return
+		default:
+		}
+		var addr WinDivertAddress
+		n, err := winDivertRecv(e.handle, buf, &addr)
+		if err != nil {
+			if !e.running {
+				return
+			}
+			continue
+		}
+		if n == 0 {
+			continue
+		}
+		pkt := make([]byte, n)
+		copy(pkt, buf[:n])
+		e.ProcessPacket(pkt, addr)
+	}
 }
 
 func (e *DamageEngine) Stop() {
