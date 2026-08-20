@@ -2,4 +2,5 @@
 *.dll
 *.sys
 *.pdb
+*.log
 cmd/delayforge/webui/windivert/
